@@ -137,6 +137,7 @@ class RefineNetLSTM(nn.Module):
     def forward(self, x, h, c):
         x_img, lmbda_moment = x['img'], x['state']
         conv_codes = self.convnet(x_img)
+        #@todo: Maybe Kmeans here
         lstm_input = torch.cat((lmbda_moment, conv_codes), dim=1)
         h, c = self.lstm(lstm_input, (h, c))
         return self.fc_out(h), h, c

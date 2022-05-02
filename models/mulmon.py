@@ -300,7 +300,7 @@ class MulMON(nn.Module):
 
         # Initialize parameters for the latents' distribution
         assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
-        lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])
+        lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])  #@todo: here kmeans on one view and all views
         neg_elbo = 0.   # torch.tensor(B, 1, device=xmul.device, requires_grad=True)
         xq_nll = 0.  # torch.zeros(B, 1, device=xmul.device, requires_grad=True)
 

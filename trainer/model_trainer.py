@@ -45,6 +45,7 @@ class ModelTrainer(BaseTrainer):
 
     def train(self):
         print('\n================== Start training ===================')
+        print("save_period", self.save_period)
         # self.start_time = time.time()
         assert (self.epochs + 1) > self.start_epoch
         for epoch in range(self.start_epoch, self.epochs + 1):
@@ -53,7 +54,6 @@ class ModelTrainer(BaseTrainer):
 
             if epoch % self.config.val_period == 0:
                 valid_outs = self._validate_epoch(epoch)
-
             if epoch % self.save_period == 0:
                 self._save_checkpoint(epoch)
 
