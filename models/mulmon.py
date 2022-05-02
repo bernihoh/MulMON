@@ -8,7 +8,7 @@ import torch.distributions as dist
 from models.modules import *
 import visualisation as vis
 import utils
-
+from models import KMeans
 
 class MulMON(nn.Module):
     """
@@ -46,7 +46,14 @@ class MulMON(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(512, self.z_dim, bias=True)
         )
-        self.lmbda0 = nn.Parameter(torch.randn(1, 2*self.z_dim) - 0.5, requires_grad=True)
+        self.n_clusters = 100
+        self.KMeansPP = KMeans.KMeansPP(n_clusters=self.n_clusters)
+        self.cc_enc = nn.Sequential(
+            nn.Linear(self.n_clusters*3, self.n_clusters*3//2),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.n_clusters*3//2, 2*self.z_dim)
+        )
+        #self.lmbda0 = nn.Parameter(torch.randn(1, 2*self.z_dim) - 0.5, requires_grad=True)
 
     @staticmethod
     def save_visuals(vis_images, vis_recons, vis_comps, vis_hiers, save_dir, start_id=0):
@@ -300,7 +307,17 @@ class MulMON(nn.Module):
 
         # Initialize parameters for the latents' distribution
         assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
-        lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])  #@todo: here kmeans on one view and all views
+        """Kmeans version 1"""
+        kmeans_input = xmul.permute(0, 1, 3, 4, 2).flatten(start_dim=1, end_dim=3)
+        #print("kmeans_input", kmeans_input.shape)
+        cluster_centers = torch.stack([self.KMeansPP(ki_b) for ki_b in kmeans_input[:]], dim=0)
+        #print("cluster_centers", cluster_centers.shape)
+        lmbda_b = self.cc_enc(cluster_centers.flatten(start_dim=1))[:, None, ...].repeat(1, K, 1)
+        #print("lmbda_b", lmbda_b.shape)
+        lmbda = lmbda_b.flatten(start_dim=0, end_dim=1)
+        """Kmeans version 1 End"""
+        #lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])  #@todo: here kmeans on one view and all views
+        #print("lmbda", lmbda.shape)
         neg_elbo = 0.   # torch.tensor(B, 1, device=xmul.device, requires_grad=True)
         xq_nll = 0.  # torch.zeros(B, 1, device=xmul.device, requires_grad=True)
 
