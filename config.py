@@ -43,6 +43,7 @@ class CONFIG(object):
     view_dim = 5                # viewpoint code after non-linear transformations
     latent_dim = 16             # latent diemnsion
     WORK_MODE = 'training'      # one of ['training', 'testing']
+    kmeans = "init_only"
 
     # validation control
     eval_classification = False

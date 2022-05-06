@@ -35,7 +35,7 @@ class MulMON(nn.Module):
         self.num_vq_show = self.config.num_vq_show
         self.decoder = SpatialBroadcastDec(self.z_dim, 4, self.config.image_size)
         # One could use v^t as an input to the refinement function too (s.t. comply with the math presented on the paper).
-        self.refine_net = RefineNetLSTM(self.z_dim, channels_in=17, image_size=self.config.image_size)
+        self.refine_net = RefineNetLSTM(self.z_dim, channels_in=17, image_size=self.config.image_size, kmeans_config=self.config.kmeans)
         self.view_encoder = nn.Sequential(
             nn.Linear(self.v_in_dim, 128, bias=True),
             nn.ReLU(inplace=True),
@@ -48,12 +48,14 @@ class MulMON(nn.Module):
         )
         self.n_clusters = 100
         self.KMeansPP = KMeans.KMeansPP(n_clusters=self.n_clusters)
-        self.cc_enc = nn.Sequential(
-            nn.Linear(self.n_clusters*3, self.n_clusters*3//2),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.n_clusters*3//2, 2*self.z_dim)
-        )
-        #self.lmbda0 = nn.Parameter(torch.randn(1, 2*self.z_dim) - 0.5, requires_grad=True)
+        if self.config.kmeans in ['init_only', 'init_before_lstm', 'init_after_lstm']:
+            self.cc_enc = nn.Sequential(
+                nn.Linear(self.n_clusters*3, self.n_clusters*3//2),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.n_clusters*3//2, 2*self.z_dim)
+            )
+        else:
+            self.lmbda0 = nn.Parameter(torch.randn(1, 2*self.z_dim) - 0.5, requires_grad=True)
 
     @staticmethod
     def save_visuals(vis_images, vis_recons, vis_comps, vis_hiers, save_dir, start_id=0):
@@ -213,7 +215,7 @@ class MulMON(nn.Module):
         mu_x = mu_x.reshape((B, K,) + mu_x.shape[1:])
         return mask_logits, mu_x
 
-    def _iterative_inference(self, x, y, lmbda, niter=1):
+    def _iterative_inference(self, x, y, lmbda, cluster_centers, niter=1):
         """
         :param x: [B, 3, H, W]
         :param lmbda:  [B*K, 2*D]
@@ -265,7 +267,7 @@ class MulMON(nn.Module):
 
             # Refine lambda
             refine_inp = self.get_refine_inputs(_x, mu_x, masks, mask_logits, ll_pxl, lmbda, loss, ll_col)
-            delta, h, c = self.refine_net(refine_inp, h, c)
+            delta, h, c = self.refine_net(refine_inp, h, c, cluster_centers)
             assert not torch.isnan(lmbda).any().item(), 'Lmbda at t={} has nan: {}'.format(it, lmbda)
             assert not torch.isnan(delta).any().item(), 'Delta at t={} has nan: {}'.format(it, delta)
             lmbda = lmbda + delta
@@ -306,18 +308,19 @@ class MulMON(nn.Module):
                                                              allow_repeat='gqn' in self.config.DATA_TYPE)
 
         # Initialize parameters for the latents' distribution
-        assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
-        """Kmeans version 1"""
         kmeans_input = xmul.permute(0, 1, 3, 4, 2).flatten(start_dim=1, end_dim=3)
-        #print("kmeans_input", kmeans_input.shape)
         cluster_centers = torch.stack([self.KMeansPP(ki_b) for ki_b in kmeans_input[:]], dim=0)
-        #print("cluster_centers", cluster_centers.shape)
-        lmbda_b = self.cc_enc(cluster_centers.flatten(start_dim=1))[:, None, ...].repeat(1, K, 1)
-        #print("lmbda_b", lmbda_b.shape)
-        lmbda = lmbda_b.flatten(start_dim=0, end_dim=1)
-        """Kmeans version 1 End"""
-        #lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])  #@todo: here kmeans on one view and all views
-        #print("lmbda", lmbda.shape)
+        cluster_centers = cluster_centers.flatten(start_dim=1)
+        if self.config.kmeans in ['init_only', 'init_before_lstm', 'init_after_lstm']:   # init_only, init_before_lstm, init_after_lstm, before_lstm_only, after_lstm_only
+            print("init")
+            lmbda_b = self.cc_enc(cluster_centers)[:, None, ...].repeat(1, K, 1)
+            lmbda = lmbda_b.flatten(start_dim=0, end_dim=1)
+
+        else:
+            print("not init")
+            assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
+            lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])
+
         neg_elbo = 0.   # torch.tensor(B, 1, device=xmul.device, requires_grad=True)
         xq_nll = 0.  # torch.zeros(B, 1, device=xmul.device, requires_grad=True)
 
@@ -333,7 +336,7 @@ class MulMON(nn.Module):
             y = v_feat[:, :, v, :]
 
             # Inner loop: single-view scene learning in an iterative fashion
-            nelbo_v, lmbda, _, _ = self._iterative_inference(x, y, lmbda, nit_inner_loop)
+            nelbo_v, lmbda, _, _ = self._iterative_inference(x, y, lmbda, cluster_centers, nit_inner_loop)
             neg_elbo = neg_elbo + nelbo_v.mean() * ((float(venum) + 1) / float(len(obs_view_idx)))
 
         # --- scene querying phase --- #

@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.distributions as dist
 import torch.nn.functional as F
 import pdb
-
+from models import KMeans
 
 def to_sigma(logvar):
     """ Compute std """
@@ -128,16 +128,46 @@ class RefineNetLSTM(nn.Module):
     function Phi (see Sec 3.3 of the paper)
     (adapted from: https://github.com/MichaelKevinKelly/IODINE)
     """
-    def __init__(self, z_dim, channels_in, image_size):
+    def __init__(self, z_dim, channels_in, image_size, kmeans_config):
         super(RefineNetLSTM, self).__init__()
         self.convnet = Encoder(channels_in, 128, image_size)
-        self.lstm = nn.LSTMCell(128 + 4 * z_dim, 128, bias=True)
         self.fc_out = nn.Linear(128, 2 * z_dim)
+        self.kmeans_config = kmeans_config
+        self.n_clusters = 100
+        if kmeans_config in ['init_before_lstm', 'init_after_lstm', 'before_lstm_only', 'after_lstm_only']:
+            self.cc_encoding = nn.Sequential(
+                nn.Linear(self.n_clusters * 3, self.n_clusters * 3 // 2),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.n_clusters * 3 // 2, 4 * z_dim))
+            if kmeans_config in ['init_before_lstm', 'before_lstm_only']:   # init_only, init_before_lstm, init_after_lstm, before_lstm_only, after_lstm_only
+                self.lstm = nn.LSTMCell(128 + 4 * z_dim + 4 * z_dim, 128, bias=True)
 
-    def forward(self, x, h, c):
+            #    self.cc_conv_integrate = nn.Sequential(nn.Linear(2*128, 3*128//2),
+            #                                           nn.ReLU(inplace=True),
+            #                                           nn.Linear(3*128//2, 128))
+            if kmeans_config in ['init_after_lstm', 'after_lstm_only']:
+                self.lstm = nn.LSTMCell(128 + 4 * z_dim, 128, bias=True)
+                self.cc_h_integrate = nn.Sequential(nn.Linear(128 + 4 * z_dim, (2*128 + 4 * z_dim)//2),
+                                                    nn.ReLU(inplace=True),
+                                                    nn.Linear((2*128 + 4 * z_dim) // 2, 128),
+                                                    nn.ReLU(inplace=True))
+        else:
+            self.lstm = nn.LSTMCell(128 + 4 * z_dim, 128, bias=True)
+
+    def forward(self, x, h, c, cluster_centers):
         x_img, lmbda_moment = x['img'], x['state']
         conv_codes = self.convnet(x_img)
-        #@todo: Maybe Kmeans here
+        if self.kmeans_config in ['init_before_lstm', 'init_after_lstm', 'before_lstm_only', 'after_lstm_only']:
+            print("a")
+            cc_enc = self.cc_encoding(cluster_centers)
+            cc_enc = cc_enc[:, None, ...].repeat(1, conv_codes.shape[0]//cluster_centers.shape[0], 1).flatten(start_dim=0, end_dim=1)
+            if self.kmeans_config in ['init_before_lstm', 'before_lstm_only']:
+                print("b")
+                conv_codes = torch.cat((conv_codes, cc_enc), dim=1)
         lstm_input = torch.cat((lmbda_moment, conv_codes), dim=1)
         h, c = self.lstm(lstm_input, (h, c))
+        if self.kmeans_config in ['init_after_lstm', 'after_lstm_only']:
+            print("c")
+            _h = self.cc_h_integrate(torch.cat((h, cc_enc), dim=1))
+            return self.fc_out(_h), h, c
         return self.fc_out(h), h, c

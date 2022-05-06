@@ -284,14 +284,16 @@ def main(cfg):
                         action="store_true", default=False)
     parser.add_argument("--use_bg", help="treat background as an object",
                         action="store_true", default=False)
-
+    parser.add_argument("--kmeans_version", default="init_only", type=str, help='where kmeans should be used, correct values: init_only, init_before_lstm, init_after_lstm, before_lstm_only, after_lstm_only')
     parser.add_argument("-i", '--input_dir', required=True,  help="path to the input data for the model to read")
     parser.add_argument("-o", '--output_dir', required=True,  help="destination dir for the model to write out results")
+
     args = parser.parse_args()
 
     ###########################################
     # General training reconfig
     ###########################################
+    cfg.kmeans = args.kmeans_version
     cfg.arch = args.arch
     cfg.DATA_TYPE = args.datatype
     cfg.num_epochs = args.epochs
