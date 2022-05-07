@@ -12,4 +12,4 @@ python train_parallel.py --arch aug_MulMON --datatype ${data_type} --work_mode t
 --batch_size 4 --epochs 4000 --step_per_epoch 200 --optimiser Adam --lr_rate 0.0002 --seed 0 \
 --num_slots 7 --pixel_sigma 0.1 --temperature 0.0 --latent_dim 16 --view_dim 5 --min_sample_views 1 --max_sample_views 6 --num_vq_show 5 \
 --query_nll 1.0 --exp_nll 1.0 --exp_attention 1.0 --kl_latent 1.0 --kl_spatial 1.0 \
---nodes 1 --gpus 2 --gpu_start 0 --master_port '29500' --use_bg
+--nodes 1 --gpus 1 --gpu_start 0 --master_port '29500' --use_bg
