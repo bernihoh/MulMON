@@ -158,16 +158,16 @@ class RefineNetLSTM(nn.Module):
         x_img, lmbda_moment = x['img'], x['state']
         conv_codes = self.convnet(x_img)
         if self.kmeans_config in ['init_before_lstm', 'init_after_lstm', 'before_lstm_only', 'after_lstm_only']:
-            print("a")
+            #print("a")
             cc_enc = self.cc_encoding(cluster_centers)
             cc_enc = cc_enc[:, None, ...].repeat(1, conv_codes.shape[0]//cluster_centers.shape[0], 1).flatten(start_dim=0, end_dim=1)
             if self.kmeans_config in ['init_before_lstm', 'before_lstm_only']:
-                print("b")
+                #print("b")
                 conv_codes = torch.cat((conv_codes, cc_enc), dim=1)
         lstm_input = torch.cat((lmbda_moment, conv_codes), dim=1)
         h, c = self.lstm(lstm_input, (h, c))
         if self.kmeans_config in ['init_after_lstm', 'after_lstm_only']:
-            print("c")
+            #print("c")
             _h = self.cc_h_integrate(torch.cat((h, cc_enc), dim=1))
             return self.fc_out(_h), h, c
         return self.fc_out(h), h, c

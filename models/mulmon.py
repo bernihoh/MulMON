@@ -312,12 +312,12 @@ class MulMON(nn.Module):
         cluster_centers = torch.stack([self.KMeansPP(ki_b) for ki_b in kmeans_input[:]], dim=0)
         cluster_centers = cluster_centers.flatten(start_dim=1)
         if self.config.kmeans in ['init_only', 'init_before_lstm', 'init_after_lstm']:   # init_only, init_before_lstm, init_after_lstm, before_lstm_only, after_lstm_only
-            print("init")
+            #print("init")
             lmbda_b = self.cc_enc(cluster_centers)[:, None, ...].repeat(1, K, 1)
             lmbda = lmbda_b.flatten(start_dim=0, end_dim=1)
 
         else:
-            print("not init")
+            #print("not init")
             assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
             lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])
 
