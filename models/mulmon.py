@@ -384,9 +384,20 @@ class MulMON(nn.Module):
         obs_view_idx, qry_view_idx = self.sample_view_config(V, self.num_vq_show, self.num_vq_show,
                                                              allow_repeat=False)
 
-        # Initialize parameters for latents' distribution
-        assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
-        lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])
+        # Initialize parameters for the latents' distribution
+        kmeans_input = xmul.permute(0, 1, 3, 4, 2).flatten(start_dim=1, end_dim=3)
+        cluster_centers = torch.stack([self.KMeansPP(ki_b) for ki_b in kmeans_input[:]], dim=0)
+        cluster_centers = cluster_centers.flatten(start_dim=1)
+        if self.config.kmeans in ['init_only', 'init_before_lstm',
+                                  'init_after_lstm']:  # init_only, init_before_lstm, init_after_lstm, before_lstm_only, after_lstm_only
+            # print("init")
+            lmbda_b = self.cc_enc(cluster_centers)[:, None, ...].repeat(1, K, 1)
+            lmbda = lmbda_b.flatten(start_dim=0, end_dim=1)
+
+        else:
+            # print("not init")
+            assert not torch.isnan(self.lmbda0).any().item(), 'lmbda0 has nan'
+            lmbda = self.lmbda0.expand((B * K,) + self.lmbda0.shape[1:])
 
         # --- get view codes ---
         v_feat = self.view_encoder(v_pts.reshape(B * V, -1))  # output [B*V, 8]
